@@ -7,6 +7,8 @@ import datetime
 import requests
 import urllib3
 import holidays
+import threading
+from flask import Flask
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
@@ -14,13 +16,27 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.common.exceptions import StaleElementReferenceException, TimeoutException
-import threading
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
+# --- 1. SERVIDOR WEB MÍNIMO (Para liberar a opção FREE no Render) ---
+app = Flask(__name__)
+
+@app.route('/')
+def health_check():
+    return "🟢 Monitor TJSP está online e rodando em segundo plano!", 200
+
+def iniciar_servidor_web():
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
+
+# Inicia o Flask em uma Thread paralela para não travar a execução do robô
+threading.Thread(target=iniciar_servidor_web, daemon=True).start()
+
+# --- 2. LÓGICA PRINCIPAL DO ROBÔ ---
 def main():
     print("\n" + "="*50)
-    print("🚀 INICIANDO MONITOR TJSP NA NUVEM (RENDER)")
+    print("🚀 INICIANDO MONITOR TJSP NA NUVEM (WEB SERVICE FREE)")
     print("="*50)
 
     # Lendo credenciais das Variáveis de Ambiente do Render
@@ -40,9 +56,6 @@ def main():
     HORA_FIM = datetime.datetime.strptime("17:05:00", "%H:%M:%S").time()
 
     FERIADOS_SP = holidays.BR(subdiv='SP')
-
-    def log_alerta(titulo, mensagem):
-        print(f"🔔 [{titulo}]: {mensagem}")
 
     def dentro_do_expediente():
         agora = datetime.datetime.now()
@@ -214,7 +227,7 @@ def main():
     except TimeoutException:
         print("⚠️ Grade de chamados demorou a responder. Continuando mesmo assim...")
 
-    enviar_alertas("🟢 *Monitor TJSP Ativado na Nuvem (Render)*\n\nO robô está ativo e monitorando novos chamados.")
+    enviar_alertas("🟢 *Monitor TJSP Ativado na Nuvem (Web Service Free)*\n\nO robô está ativo e monitorando novos chamados.")
 
     def mapear_chamados_com_detalhes():
         mapa_chamados = {}
