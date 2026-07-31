@@ -1,6 +1,0 @@
-selenium
-requests
-urllib3
-holidays
-flask
-gunicorn
