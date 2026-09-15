@@ -14,7 +14,7 @@ from flask import Flask
 # Garante suporte a UTF-8 no ambiente Linux do Render
 sys.stdout.reconfigure(encoding='utf-8', line_buffering=True) if hasattr(sys.stdout, 'reconfigure') else None
 
-# Mini servidor Flask para o Render não derrubar o Web Service por falta de porta aberta
+# Mini servidor Flask para o Render manter a porta aberta e o Web Service ativo
 app_flask = Flask(__name__)
 
 @app_flask.route('/')
@@ -95,9 +95,10 @@ def main():
             try:
                 res = requests.post(url, json=payload, timeout=35, verify=False)
                 if res.status_code == 200:
+                    print("✈️ Alerta enviado com sucesso para o Telegram!", flush=True)
                     return True
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"⚠️ Erro ao enviar Telegram (Tentativa {tentativa+1}): {e}", flush=True)
             time.sleep(3)
         return False
 
@@ -108,6 +109,7 @@ def main():
         try:
             res = requests.post(WHATSAPP_API_URL, json=payload, timeout=30)
             if res.status_code == 200:
+                print("📱 Alerta enviado para o WhatsApp com sucesso!", flush=True)
                 return True
         except Exception:
             pass
@@ -127,8 +129,8 @@ def main():
             return False, f"Fora do expediente ({agora.strftime('%H:%M:%S')})"
         return True, "Em expediente"
 
-    # --- CONFIGURAÇÃO EXTREMA DE ECONOMIA DE RAM PARA O CHROME ---
-    print("🌐 Configurando Chrome Headless com limite restrito de RAM...", flush=True)
+    # --- CONFIGURAÇÃO DE RAM PARA O CHROME ---
+    print("🌐 Configurando Chrome Headless otimizado...", flush=True)
     chrome_options = Options()
     chrome_options.add_argument("--headless=new")
     chrome_options.add_argument("--no-sandbox")
@@ -143,7 +145,7 @@ def main():
     chrome_options.add_argument("--disable-default-apps")
     chrome_options.add_argument("--no-zygote")
     chrome_options.add_argument("--blink-settings=imagesEnabled=false")
-    chrome_options.add_argument("--js-flags=--max-old-space-size=128") # Limita a memória interna do motor V8 do Chrome
+    chrome_options.add_argument("--js-flags=--max-old-space-size=128")
 
     driver = webdriver.Chrome(options=chrome_options)
     wait = WebDriverWait(driver, 20)
@@ -191,21 +193,23 @@ def main():
             pass
 
         driver.get("https://suporte.tjsp.jus.br/saw/Requests")
-        print("⏳ Aguardando renderização da tabela...", flush=True)
+        print("⏳ Aguardando renderização inicial da tabela...", flush=True)
         time.sleep(10)
 
         def forcar_refresh_tabela():
             try:
+                # Tenta clicar no botão nativo de atualizar da grade do SMAX
                 js_click = """
-                var btn = document.querySelector("button[title*='Atualizar'], button[aria-label*='Atualizar'], .grid-toolbar-refresh-button, div[title*='Atualizar']");
+                var btn = document.querySelector("button[title*='Atualizar'], button[aria-label*='Atualizar'], .grid-toolbar-refresh-button, div[title*='Atualizar'], .x-btn-icon-el");
                 if (btn) { btn.click(); return true; }
                 return false;
                 """
                 if not driver.execute_script(js_click):
-                    driver.find_element(By.TAG_NAME, 'body').send_keys(Keys.CONTROL, 'r')
-                time.sleep(2)
-            except Exception:
-                pass
+                    # Se não achar o botão, recarrega a página de forma segura pelo driver
+                    driver.refresh()
+                time.sleep(5) # Tempo hábil para o SMAX reconstruir o DOM da tabela via AJAX
+            except Exception as e:
+                print(f"⚠️ Erro ao atualizar tabela: {e}", flush=True)
 
         def extrair_chamados_da_tabela():
             mapa_chamados = {}
@@ -213,14 +217,14 @@ def main():
 
             js_script = """
             var items = [];
-            var rows = document.querySelectorAll("tr, div[role='row'], .grid-row");
+            var rows = document.querySelectorAll("tr, div[role='row'], .grid-row, .x-grid-item");
             rows.forEach(function(row) {
                 var text = row.innerText || "";
                 var html = row.innerHTML || "";
                 var match = text.match(/(\\b\\d{7,8}\\b)/);
                 if (match) {
                     var numId = match[1];
-                    var cells = row.querySelectorAll("td, div[role='gridcell']");
+                    var cells = row.querySelectorAll("td, div[role='gridcell'], .x-grid-cell");
                     var cellValues = [];
                     cells.forEach(function(c) {
                         cellValues.push(c.innerText ? c.innerText.trim() : "");
@@ -329,7 +333,7 @@ def main():
                 else:
                     print(f"[{agorasr}] 🔄 Fila atualizada — {len(ids_atuais)} chamado(s) (0 novos).", flush=True)
 
-                time.sleep(10)
+                time.sleep(15)
 
             except Exception as e:
                 print(f"⚠️ Erro no ciclo: {e}", flush=True)
@@ -342,7 +346,6 @@ def main():
             pass
 
 if __name__ == "__main__":
-    # Inicia o servidor Flask em uma thread separada para satisfazer a porta do Render Web Service
     threading.Thread(target=run_flask, daemon=True).start()
     try:
         main()
